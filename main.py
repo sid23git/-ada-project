@@ -1,11 +1,10 @@
-from agents.orchestrator import ADAOrchestrator
+from ada_graph import run_ada_v2
 
-# This is now the entire entry point for ADA.
-# One object, one method call — the orchestrator
-# handles everything else automatically.
-ada = ADAOrchestrator(
+results = run_ada_v2(
     filepath="data/sample.csv",
     target_col="Survived"
 )
 
-results = ada.run_pipeline()
+print("\nFinal report preview:")
+print(results["final_report"][:500])
+print(f"\nAudit trail entries: {len(results['audit_trail'])}")

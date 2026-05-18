@@ -11,15 +11,15 @@ if "pipeline_running" not in st.session_state:
 
 # ─── Page Config ──────────────────────────────────────
 st.set_page_config(
-    page_title="ADA — Autonomous Data Analysis Agent",
+    page_title="Autonomous Data Team",
     page_icon="🤖",
     layout="wide"
 )
 
 # ─── Header ───────────────────────────────────────────
-st.title("🤖 ADA — Autonomous Data Analysis Agent")
+st.title("🤖 Autonomous Data Team")
 st.markdown(
-    "Upload any CSV dataset and ADA will autonomously "
+    "Upload any CSV dataset and ADT will autonomously "
     "analyze, clean, model, and explain it — just like a junior data scientist."
 )
 st.divider()
@@ -36,11 +36,11 @@ with st.sidebar:
     target_col_input = st.text_input(
         "Target column (optional)",
         placeholder="e.g. Survived, Price, Churn",
-        help="Leave empty and ADA will use the last column"
+        help="Leave empty and ADT will use the last column"
     )
 
     run_button = st.button(
-        "▶ Run ADA Pipeline",
+        "▶ Run ADT Pipeline",
         type="primary",
         use_container_width=True,
         disabled=uploaded_file is None or st.session_state.pipeline_running
@@ -81,7 +81,7 @@ elif not run_button:
                 len(df_preview.select_dtypes(include="number").columns))
 
     st.dataframe(df_preview.head(20), use_container_width=True)
-    st.caption("Showing first 20 rows. Press 'Run ADA Pipeline' to start analysis.")
+    st.caption("Showing first 20 rows. Press 'Run ADT Pipeline' to start analysis.")
 
 else:
     temp_path = f"data/uploaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -92,7 +92,7 @@ else:
 
     st.session_state.pipeline_running = True
     progress = st.progress(0)
-    status = st.status("🚀 ADA pipeline starting...", expanded=True)
+    status = st.status("🚀 ADT pipeline starting...", expanded=True)
 
     try:
         with status:
@@ -116,7 +116,7 @@ else:
             results = ada.run_pipeline()
             progress.progress(100)
 
-        status.update(label="✅ ADA Pipeline Complete!", state="complete")
+        status.update(label="✅ ADT Pipeline Complete!", state="complete")
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 EDA", "🧹 Cleaning", "🤖 ML Results",
@@ -192,7 +192,9 @@ else:
 
             st.markdown("**Model Comparison**")
             model_results = ml.get("model_results", {})
-            if model_results:
+            if not model_results:
+                pass
+            else:
                 model_df = pd.DataFrame(model_results).T
                 st.dataframe(model_df, use_container_width=True)
 
@@ -249,7 +251,7 @@ else:
             st.download_button(
                 label="⬇️ Download Report",
                 data=report,
-                file_name=f"ADA_report_{datetime.now().strftime('%Y%m%d')}.txt",
+                file_name=f"ADT_report_{datetime.now().strftime('%Y%m%d')}.txt",
                 mime="text/plain"
             )
 

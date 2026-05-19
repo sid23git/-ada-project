@@ -1,3 +1,6 @@
+# TODO v3.0 — refactor nodes into separate files under nodes/ folder
+# See architecture plan in README
+
 import pandas as pd
 from datetime import datetime
 from typing import Literal
@@ -7,6 +10,8 @@ from agents.eda_agent import analyze_dataframe, run_eda_agent
 from agents.cleaning_agent import run_cleaning_agent
 from agents.ml_agent import run_ml_agent
 from agents.explain_agent import run_explain_agent
+from agents.hypothesis_agent import run_hypothesis_agent
+from agents.validator_agent import run_validator_agent
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -56,7 +61,7 @@ def load_data_node(state: ADAState) -> ADAState:
 
         trail = log({"audit_trail": trail}, "LoadData",
                     "Dataset loaded",
-                    f"{df.shape[0]} rows × {df.shape[1]} columns")
+                    f"{df.shape[0]} rows x {df.shape[1]} columns")
 
         return {
             **state,
@@ -78,13 +83,56 @@ def load_data_node(state: ADAState) -> ADAState:
 
 
 # ─────────────────────────────────────────────────
-# NODE 2 — EDA
+# NODE 2 — Hypothesis (NEW in v3.0)
+# ─────────────────────────────────────────────────
+
+def hypothesis_node(state: ADAState) -> ADAState:
+    """
+    Generates hypotheses BEFORE EDA.
+    This is the scientific method applied to data analysis.
+    The agent reasons about what it EXPECTS to find
+    before seeing any statistics — key research contribution.
+    """
+    try:
+        trail = log(state, "Hypothesis",
+                    "Forming hypotheses before analysis...")
+
+        df = state["raw_df"]
+        target_col = state.get("target_col")
+
+        hypotheses = run_hypothesis_agent(df, target_col)
+
+        trail = log({"audit_trail": trail}, "Hypothesis",
+                    "Hypotheses formed",
+                    f"{len(hypotheses.get('hypotheses', []))} hypotheses generated")
+
+        return {
+            **state,
+            "hypotheses": hypotheses,
+            "current_node": "hypothesis",
+            "audit_trail": trail,
+            "error": None
+        }
+
+    except Exception as e:
+        trail = log(state, "Hypothesis", "FAILED — skipping", str(e))
+        return {
+            **state,
+            "hypotheses": {},
+            "current_node": "hypothesis",
+            "audit_trail": trail,
+            "error": None  # non-critical
+        }
+
+
+# ─────────────────────────────────────────────────
+# NODE 3 — EDA
 # ─────────────────────────────────────────────────
 
 def eda_node(state: ADAState) -> ADAState:
     """
     Runs exploratory data analysis.
-    Uses the raw_df from state — doesn't reload the file.
+    Uses the raw_df from state.
     """
     try:
         trail = log(state, "EDA", "Starting exploratory analysis...")
@@ -118,14 +166,12 @@ def eda_node(state: ADAState) -> ADAState:
 
 
 # ─────────────────────────────────────────────────
-# NODE 3 — Cleaning
+# NODE 4 — Cleaning
 # ─────────────────────────────────────────────────
 
 def cleaning_node(state: ADAState) -> ADAState:
     """
     Cleans the raw dataframe based on EDA findings.
-    Reads raw_df and eda_stats from state.
-    Writes cleaned_df and cleaning_strategy back to state.
     """
     try:
         trail = log(state, "Cleaning", "Starting data cleaning...")
@@ -137,7 +183,7 @@ def cleaning_node(state: ADAState) -> ADAState:
 
         trail = log({"audit_trail": trail}, "Cleaning",
                     "Cleaning complete",
-                    f"Shape: {df.shape} → {cleaned_df.shape}")
+                    f"Shape: {df.shape} -> {cleaned_df.shape}")
 
         return {
             **state,
@@ -159,14 +205,12 @@ def cleaning_node(state: ADAState) -> ADAState:
 
 
 # ─────────────────────────────────────────────────
-# NODE 4 — ML
+# NODE 5 — ML
 # ─────────────────────────────────────────────────
 
 def ml_node(state: ADAState) -> ADAState:
     """
     Trains and evaluates ML models.
-    Reads cleaned_df from state.
-    Writes ml_results back to state.
     """
     try:
         trail = log(state, "ML", "Starting model training...")
@@ -200,13 +244,13 @@ def ml_node(state: ADAState) -> ADAState:
 
 
 # ─────────────────────────────────────────────────
-# NODE 5 — Explanation
+# NODE 6 — Explanation
 # ─────────────────────────────────────────────────
 
 def explain_node(state: ADAState) -> ADAState:
     """
     Computes SHAP values and generates plain English explanations.
-    Non-critical — if this fails, pipeline continues to report.
+    Non-critical — if this fails, pipeline continues to validator.
     """
     try:
         trail = log(state, "Explain", "Starting SHAP analysis...")
@@ -243,12 +287,62 @@ def explain_node(state: ADAState) -> ADAState:
             "explain_results": {},
             "current_node": "explain",
             "audit_trail": trail,
-            "error": None  # non-critical — don't stop pipeline
+            "error": None  # non-critical
         }
 
 
 # ─────────────────────────────────────────────────
-# NODE 6 — Report
+# NODE 7 — Validator (NEW in v3.0)
+# ─────────────────────────────────────────────────
+
+def validator_node(state: ADAState) -> ADAState:
+    """
+    Tests hypotheses against actual findings.
+    Closes the scientific loop opened by hypothesis_node.
+    This is the most novel part of ADA v3.0.
+    """
+    try:
+        trail = log(state, "Validator",
+                    "Testing hypotheses against findings...")
+
+        validation = run_validator_agent(
+            hypotheses=state.get("hypotheses", {}),
+            eda_stats=state.get("eda_stats", {}),
+            ml_results=state.get("ml_results", {}),
+            explain_results=state.get("explain_results", {})
+        )
+
+        confirmed = sum(
+            1 for v in validation.get("validation_results", [])
+            if v.get("verdict") == "CONFIRMED"
+        )
+        total = len(validation.get("validation_results", []))
+
+        trail = log({"audit_trail": trail}, "Validator",
+                    "Validation complete",
+                    f"{confirmed}/{total} hypotheses confirmed")
+
+        return {
+            **state,
+            "validation_results": validation,
+            "current_node": "validator",
+            "audit_trail": trail,
+            "error": None
+        }
+
+    except Exception as e:
+        trail = log(state, "Validator", "FAILED — skipping", str(e))
+        return {
+            **state,
+            "validation_results": {},
+            "current_node": "validator",
+            "audit_trail": trail,
+            "error": None  # non-critical
+        }
+
+
+# ─────────────────────────────────────────────────
+# NODE 8 — Report
 # ─────────────────────────────────────────────────
 
 def report_node(state: ADAState) -> ADAState:
@@ -261,13 +355,19 @@ def report_node(state: ADAState) -> ADAState:
 
         end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Build summary for GPT
+        # Build summary including hypothesis validation
+        validation = state.get("validation_results", {})
         summary = {
             "eda": state.get("eda_report", "")[:500],
             "cleaning": state.get("cleaning_strategy", {}),
             "ml": state.get("ml_results", {}).get("interpretation", {}),
             "explanation": state.get("explain_results", {}).get(
-                "interpretation", {})
+                "interpretation", {}),
+            "hypothesis_validation": {
+                "results": validation.get("validation_results", []),
+                "summary": validation.get("overall_summary", ""),
+                "surprising": validation.get("most_surprising", "")
+            }
         }
 
         response = client.chat.completions.create(
@@ -279,18 +379,18 @@ def report_node(state: ADAState) -> ADAState:
                 },
                 {
                     "role": "user",
-                    "content": f"Write a professional data analysis report based on: {json.dumps(summary)}"
+                    "content": f"Write a professional data analysis report including hypothesis validation results: {json.dumps(summary)}"
                 }
             ],
-            max_tokens=1000
+            max_tokens=1500
         )
 
         final_report = response.choices[0].message.content
 
         # Save outputs
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_path = f"outputs/ADA_v2_report_{timestamp}.txt"
-        audit_path = f"outputs/ADA_v2_audit_{timestamp}.json"
+        report_path = f"outputs/ADA_v3_report_{timestamp}.txt"
+        audit_path = f"outputs/ADA_v3_audit_{timestamp}.json"
 
         with open(report_path, "w") as f:
             f.write(final_report)
@@ -323,15 +423,13 @@ def report_node(state: ADAState) -> ADAState:
 
 
 # ─────────────────────────────────────────────────
-# NODE 7 — Error Handler
+# NODE 9 — Error Handler
 # ─────────────────────────────────────────────────
 
 def error_handler_node(state: ADAState) -> ADAState:
     """
     Handles errors from any node.
     Decides whether to retry or stop.
-    This is the self-correction mechanism —
-    your key research contribution.
     """
     error = state.get("error", "")
     retry_count = state.get("retry_count", 0)
@@ -360,7 +458,7 @@ def error_handler_node(state: ADAState) -> ADAState:
             **state,
             "audit_trail": trail,
             "retry_count": 0,
-            "error": None  # clear error and continue
+            "error": None
         }
 
     # Retry the node
@@ -380,25 +478,26 @@ def error_handler_node(state: ADAState) -> ADAState:
 # ─────────────────────────────────────────────────
 
 def check_error(state: ADAState) -> Literal[
-    "error_handler", "eda", "cleaning", "ml",
-    "explain", "report", "end"
+    "error_handler", "hypothesis", "eda", "cleaning",
+    "ml", "explain", "validator", "report", "end"
 ]:
     """
     Called after every node.
     Routes to error_handler if there's an error,
     otherwise continues to the next node.
-    This is what makes every node self-correcting.
     """
     if state.get("error"):
         return "error_handler"
 
     node = state.get("current_node", "")
     routing = {
-        "load_data": "eda",
+        "load_data": "hypothesis",
+        "hypothesis": "eda",
         "eda": "cleaning",
         "cleaning": "ml",
         "ml": "explain",
-        "explain": "report",
+        "explain": "validator",
+        "validator": "report",
         "report": "end"
     }
     return routing.get(node, "end")
@@ -411,46 +510,49 @@ def check_error(state: ADAState) -> Literal[
 def build_ada_graph():
     """
     Assembles all nodes and edges into the LangGraph.
-    This is where the magic happens — we define the
-    structure of the pipeline declaratively.
+    v3.0 adds hypothesis and validator nodes.
     """
-
     graph = StateGraph(ADAState)
 
     # Add all nodes
     graph.add_node("load_data", load_data_node)
+    graph.add_node("hypothesis", hypothesis_node)
     graph.add_node("eda", eda_node)
     graph.add_node("cleaning", cleaning_node)
     graph.add_node("ml", ml_node)
     graph.add_node("explain", explain_node)
+    graph.add_node("validator", validator_node)
     graph.add_node("report", report_node)
     graph.add_node("error_handler", error_handler_node)
 
     # Entry point
     graph.set_entry_point("load_data")
 
-    # Conditional edges after every node
-    for node in ["load_data", "eda", "cleaning", "ml", "explain", "report"]:
-        graph.add_conditional_edges(node, check_error, {
-            "error_handler": "error_handler",
-            "eda": "eda",
-            "cleaning": "cleaning",
-            "ml": "ml",
-            "explain": "explain",
-            "report": "report",
-            "end": END
-        })
+    # All nodes with conditional edges
+    all_nodes = [
+        "load_data", "hypothesis", "eda",
+        "cleaning", "ml", "explain",
+        "validator", "report"
+    ]
 
-    # Error handler routes back to the failed node or ends
-    graph.add_conditional_edges("error_handler", check_error, {
+    route_map = {
         "error_handler": "error_handler",
+        "hypothesis": "hypothesis",
         "eda": "eda",
         "cleaning": "cleaning",
         "ml": "ml",
         "explain": "explain",
+        "validator": "validator",
         "report": "report",
         "end": END
-    })
+    }
+
+    for node in all_nodes:
+        graph.add_conditional_edges(node, check_error, route_map)
+
+    graph.add_conditional_edges(
+        "error_handler", check_error, route_map
+    )
 
     return graph.compile()
 
@@ -461,28 +563,28 @@ def build_ada_graph():
 
 def run_ada_v2(filepath: str, target_col: str = None) -> dict:
     """
-    Entry point for ADA v2.0.
+    Entry point for ADA v3.0.
     Builds the graph and runs it with initial state.
     """
 
     print("=" * 55)
-    print("   ADA v2.0 — LangGraph Multi-Agent System")
+    print("   ADA v3.0 — Hypothesis-Driven Analysis")
     print("=" * 55)
 
-    # Build the graph
     ada_graph = build_ada_graph()
 
-    # Initial state — everything starts empty except inputs
     initial_state: ADAState = {
         "filepath": filepath,
         "target_col": target_col,
         "raw_df": None,
         "cleaned_df": None,
+        "hypotheses": None,
         "eda_stats": None,
         "eda_report": None,
         "cleaning_strategy": None,
         "ml_results": None,
         "explain_results": None,
+        "validation_results": None,
         "final_report": None,
         "current_node": None,
         "error": None,
@@ -492,11 +594,10 @@ def run_ada_v2(filepath: str, target_col: str = None) -> dict:
         "end_time": None
     }
 
-    # Run the graph
     final_state = ada_graph.invoke(initial_state)
 
     print("\n" + "=" * 55)
-    print("   ADA v2.0 Complete!")
+    print("   ADA v3.0 Complete!")
     print("=" * 55)
 
     return final_state

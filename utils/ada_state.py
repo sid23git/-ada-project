@@ -1,43 +1,36 @@
 from typing import TypedDict, Optional, Any
-import pandas as pd
 
 
 class ADAState(TypedDict):
     """
-    The central shared state for the entire ADA pipeline.
-
-    This is the 'whiteboard' that every agent reads from
-    and writes to. LangGraph passes this state between
-    nodes automatically.
-
-    Using TypedDict here is important — it gives us
-    type safety (Python knows what fields exist and
-    what types they should be) while keeping the
-    structure simple and serializable.
+    Updated state for ADA v3.0.
+    Adds hypothesis and validation fields.
     """
 
     # ── Input ────────────────────────────────────────
-    filepath: str                    # path to the CSV file
-    target_col: Optional[str]        # target column name
+    filepath: str
+    target_col: Optional[str]
 
     # ── Data ─────────────────────────────────────────
-    raw_df: Optional[Any]            # original dataframe
-    cleaned_df: Optional[Any]        # cleaned dataframe
+    raw_df: Optional[Any]
+    cleaned_df: Optional[Any]
 
     # ── Agent outputs ─────────────────────────────────
-    eda_stats: Optional[dict]        # raw statistics from EDA
-    eda_report: Optional[str]        # AI-generated EDA report
-    cleaning_strategy: Optional[dict]# decisions made by cleaning agent
-    ml_results: Optional[dict]       # model training results
-    explain_results: Optional[dict]  # SHAP explanation results
-    final_report: Optional[str]      # final synthesized report
+    hypotheses: Optional[dict]           # NEW — formed before EDA
+    eda_stats: Optional[dict]
+    eda_report: Optional[str]
+    cleaning_strategy: Optional[dict]
+    ml_results: Optional[dict]
+    explain_results: Optional[dict]
+    validation_results: Optional[dict]   # NEW — tested after explain
+    final_report: Optional[str]
 
     # ── Pipeline control ──────────────────────────────
-    current_node: Optional[str]      # which node is running now
-    error: Optional[str]             # error message if something failed
-    retry_count: int                 # how many times we've retried
-    audit_trail: list                # every decision logged here
+    current_node: Optional[str]
+    error: Optional[str]
+    retry_count: int
+    audit_trail: list
 
     # ── Metadata ──────────────────────────────────────
-    start_time: Optional[str]        # when pipeline started
-    end_time: Optional[str]          # when pipeline finished
+    start_time: Optional[str]
+    end_time: Optional[str]
